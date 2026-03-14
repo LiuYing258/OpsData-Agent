@@ -11,4 +11,4 @@
 ## 🚀 快速启动
 1. `pip install -r requirements.txt`
 2. 复制 `.env.example` 为 `.env` 并填入 API Key。
-3. 运行 `streamlit run web_ui.py`
+3. 运行 `streamlit run main.py`
