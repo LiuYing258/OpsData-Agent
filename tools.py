@@ -35,11 +35,8 @@ def execute_system_command(command: str) -> str:
     except Exception as e:
         return f"❌ 未知异常：{str(e)}"
     
-
-
-# ==========================================
 # 第二个工具：数据库查询引擎
-# ==========================================
+
 @tool
 def query_database(sql_query: str) -> str:
     """
@@ -47,7 +44,7 @@ def query_database(sql_query: str) -> str:
     当你需要查询数据库中的业务数据、日志记录或任何表格数据时，调用此工具。
     输入参数 sql_query 必须是一条合法的 SQLite 查询语句。
     """
-    # 我们的模拟数据库文件将放在当前目录下
+    # 模拟数据库文件将放在当前目录下
     db_path = "mock_data.db" 
     
     try:
@@ -70,8 +67,8 @@ def query_database(sql_query: str) -> str:
         if not results:
             return "⚠️ 查询成功，但没有匹配的数据。请检查表名或 WHERE 条件。"
             
-        # [面试亮点：上下文保护机制]
-        # 限制只返回前 50 条数据。如果直接返回几十万条，会瞬间把大模型的 Token 窗口撑爆（OOM），导致报错。
+        
+        # 限制只返回前 50 条数据
         output = f"列名: {column_names}\n"
         for row in results[:50]: 
             output += f"{row}\n"
@@ -79,8 +76,8 @@ def query_database(sql_query: str) -> str:
         return f"✅ 查询成功 (为防止内存溢出，最多显示前50条):\n{output}"
         
     except sqlite3.OperationalError as e:
-        # [面试亮点：引导自修复逻辑]
-        # 当表不存在或字段写错时，直接告诉大模型去查系统表，而不是让程序崩溃。
+     
+        # 当表不存在或字段写错时，告诉大模型去查系统表，而不是让程序崩溃。
         return f"❌ SQL 执行报错:\n{str(e)}\n请先使用 'SELECT name FROM sqlite_master WHERE type=\"table\";' 查询当前数据库中有哪些表，然后再重新生成正确的 SQL 语句。"
     except Exception as e:
         return f"❌ 数据库未知报错: {str(e)}"
@@ -88,9 +85,9 @@ def query_database(sql_query: str) -> str:
 import json
 import matplotlib.pyplot as plt
 
-# ==========================================
-# 第三个工具：数据可视化引擎
-# ==========================================
+
+# 第三个工具：数据可视化
+
 @tool
 def generate_bar_chart(data_json: str, title: str, save_path: str = "chart.png") -> str:
     """
@@ -104,7 +101,7 @@ def generate_bar_chart(data_json: str, title: str, save_path: str = "chart.png")
     try:
         print(f"\n[📊 绘图工具执行中] 正在生成图表: {title}")
         
-        # [面试亮点：解决 Windows 下 Matplotlib 中文乱码问题]
+       
         plt.rcParams['font.sans-serif'] = ['SimHei']  # 指定默认字体为黑体
         plt.rcParams['axes.unicode_minus'] = False    # 解决保存图像是负号'-'显示为方块的问题
         
@@ -114,11 +111,10 @@ def generate_bar_chart(data_json: str, title: str, save_path: str = "chart.png")
         values = data.get("values", [])
         
         if not categories or not values or len(categories) != len(values):
-            return "❌ 绘图失败：数据格式不正确或类别与数值的长度不匹配，请检查传入的 JSON 结构。"
+            return " 绘图失败：数据格式不正确或类别与数值的长度不匹配，请检查传入的 JSON 结构。"
             
-        # 开始画图
+      
         plt.figure(figsize=(8, 6))
-        # 涂上好看的颜色
         colors = ['#4CAF50', '#FF9800', '#F44336', '#2196F3', '#9C27B0']
         bars = plt.bar(categories, values, color=colors[:len(categories)])
         
@@ -135,18 +131,18 @@ def generate_bar_chart(data_json: str, title: str, save_path: str = "chart.png")
         plt.savefig(save_path, dpi=300)
         plt.close() # 释放内存，防止连续绘图导致 OOM
         
-        return f"✅ 图表已成功生成！文件已保存至当前目录：{save_path}"
+        return f"图表已成功生成，文件已保存至当前目录：{save_path}"
         
     except json.JSONDecodeError as e:
-        # [面试亮点：格式容错] 告诉模型 JSON 坏了，让它重试
+  
         return f"❌ JSON 解析失败: {str(e)}。请确保你传入的是标准的 JSON 字符串，不要带 markdown 代码块标记。"
     except Exception as e:
         return f"❌ 绘图时发生未知错误: {str(e)}"
     
 
-    # ==========================================
-# 第四个工具：长时记忆写入引擎
-# ==========================================
+
+# 第四个工具：长时记忆写入
+
 @tool
 def remember_information(info: str) -> str:
     """
@@ -154,10 +150,10 @@ def remember_information(info: str) -> str:
     输入参数 info 是你需要记住的具体内容，请尽量精简并提取核心要点。
     """
     try:
-        print(f"\n[🧠 记忆写入中] 正在保存: {info}")
+        print(f"\n[记忆写入中] 正在保存: {info}")
         # 以追加模式 (a) 打开文件，如果不存在会自动创建
         with open("memory.md", "a", encoding="utf-8") as f:
             f.write(f"- {info}\n")
-        return "✅ 记忆已成功永久保存到 memory.md 中。"
+        return "记忆已成功永久保存到 memory.md 中。"
     except Exception as e:
         return f"❌ 保存记忆失败: {str(e)}"

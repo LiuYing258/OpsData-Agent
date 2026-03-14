@@ -1,0 +1,12 @@
+langchain==0.1.12
+langchain-openai==0.0.8
+langchain-core==0.1.32
+langchain-community==0.0.28
+langgraph==0.0.26
+pydantic>=2.0.0
+matplotlib==3.8.3
+pandas==2.2.1
+python-dotenv==1.0.1
+streamlit==1.32.2
+faiss-cpu==1.8.0
+sentence-transformers==2.5.1

@@ -1,0 +1,16 @@
+# 忽略环境变量配置（保护 API Key）
+.env
+
+# 忽略 Python 缓存和虚拟环境
+__pycache__/
+*.pyc
+venv/
+.conda/
+
+# 忽略本地数据库和知识库缓存（保持开源库干净）
+data/
+*.db
+*.png
+
+# 忽略大模型生成的记忆文件
+memory.md
