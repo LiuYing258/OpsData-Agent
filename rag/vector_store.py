@@ -2,57 +2,90 @@ import os
 from langchain_community.document_loaders import TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 
-DB_PATH = "data/faiss_index"
-DOC_PATH = "data/knowledge_base.md"
+# 定义相对路径常量
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DOC_PATH = os.path.join(BASE_DIR, "data", "ops_manual.md")
+FAISS_INDEX_PATH = os.path.join(BASE_DIR, "rag", "faiss_index")
 
-def init_vector_store():
-    """Initialize or load the FAISS vector store."""
-    # 使用轻量级开源中文模型进行本地向量化
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+def get_vector_store():
+    """
+    获取或构建 FAISS 向量库。
+    务实设计：优先读取本地持久化索引，避免每次启动重复消耗算力和时间。
+    """
+    # 选用轻量级本地模型，极其适合普通 PC 运行，无需调 API
+    embeddings = HuggingFaceEmbeddings(model_name="shibing624/text2vec-base-chinese")
     
-    if os.path.exists(DB_PATH):
-        return FAISS.load_local(DB_PATH, embeddings, allow_dangerous_deserialization=True)
-        
-    os.makedirs("data", exist_ok=True)
+    # 1. 如果本地已经有索引缓存，直接加载
+    if os.path.exists(FAISS_INDEX_PATH):
+        print("[RAG] 正在加载本地 FAISS 索引缓存...")
+        return FAISS.load_local(FAISS_INDEX_PATH, embeddings, allow_dangerous_deserialization=True)
+    
+    # 2. 如果没有缓存，则读取文件并构建
+    print("[RAG] 未检测到本地索引，正在读取文档并构建 FAISS 向量库...")
     if not os.path.exists(DOC_PATH):
-        # 初始化一份模拟的运维安全规范文档
-        with open(DOC_PATH, "w", encoding="utf-8") as f:
-            f.write(
-                "# 内部服务器操作规范\n"
-                "1. 数据库备份周期为每天凌晨2点。\n"
-                "2. 严禁在生产环境执行未经审批的 DROP 或 TRUNCATE 操作。\n"
-                "3. 生产服务器默认 SSH 端口已修改为 22022，禁止使用 root 直接登录。\n"
-                "4. 遇到服务器 CPU 占用超 90% 时，优先使用 top 命令排查，并立刻向运维主管汇报。"
-            )
-            
+        raise FileNotFoundError(f"未找到知识库文件: {DOC_PATH}，请确保该文件存在。")
+
     loader = TextLoader(DOC_PATH, encoding="utf-8")
     docs = loader.load()
-    
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=200, chunk_overlap=20)
+
+    # 务实切分：200 字符为一块，保留 20 字符重叠防止上下文断裂
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=200,
+        chunk_overlap=20,
+        separators=["\n\n", "\n", "。", "！", "？", " ", ""]
+    )
     splits = text_splitter.split_documents(docs)
-    
+
+    if not splits:
+        raise ValueError("文档内容为空，切分失败！请检查 ops_manual.md 里是否有真实文字。")
+    # 构建并保存到本地
     vector_store = FAISS.from_documents(splits, embeddings)
-    vector_store.save_local(DB_PATH)
+    vector_store.save_local(FAISS_INDEX_PATH)
+    print("[RAG] FAISS 向量库构建并保存完成。")
+    
     return vector_store
 
-@tool
+# 初始化全局向量库实例，使得工具调用时无需反复加载
+try:
+    vector_store = get_vector_store()
+except Exception as e:
+    print(f"[RAG 警告] 向量库初始化失败: {e}")
+    vector_store = None
+
+# ==========================================
+# 向 Agent 暴露的查询工具
+# ==========================================
+class KnowledgeQuerySchema(BaseModel):
+    query: str = Field(description="需要查询的具体问题或关键字，例如'数据库几点备份'")
+
+@tool(args_schema=KnowledgeQuerySchema)
 def query_knowledge_base(query: str) -> str:
     """
-    【最高优先级：内部规范与知识库检索】
-    当你被问到公司内部的“规定”、“规范”、“默认配置”、“要求”，或者诸如“应该什么时间备份”、“默认端口是多少”等制度性问题时，
-    忽略执行系统命令或查询业务数据库！必须**优先调用**此工具去检索操作手册！
-    输入参数 query 应为具体的检索关键词（如“SSH端口”、“数据库备份”）。
+    【最高优先级：内部规范检索】
+    当你需要回答关于公司内部规范、运维流程、端口号、备份策略等制度性问题时，必须调用此工具。
+    绝对不要凭空捏造（幻觉）此类信息。
     """
-    try:
-        vector_store = init_vector_store()
-        docs = vector_store.similarity_search(query, k=2)
-        if not docs:
-            return "知识库中未找到相关内容。"
+    if not vector_store:
+        return "❌ 检索失败：知识库尚未初始化或文件缺失。"
         
-        res = "\n".join([doc.page_content for doc in docs])
-        return f"检索结果:\n{res}"
+    try:
+        # 检索最相关的 2 个片段
+        retriever = vector_store.as_retriever(search_kwargs={"k": 2})
+        docs = retriever.invoke(query)
+        
+        if not docs:
+            return "知识库中未找到相关规范，请如实告知用户暂无此规定。"
+            
+        # 将片段组装成字符串返回给大模型作为 Observation
+        result_text = "根据内部运维规范检索到以下内容：\n"
+        for i, doc in enumerate(docs):
+            result_text += f"[{i+1}] {doc.page_content}\n"
+            
+        return result_text
+        
     except Exception as e:
-        return f"检索失败: {str(e)}"
+        return f"❌ 检索知识库时发生未知错误: {str(e)}"
